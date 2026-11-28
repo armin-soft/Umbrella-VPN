@@ -443,6 +443,7 @@ bool ContainsBinderOrPayloadBytes(const std::vector<BYTE>& buf,
 struct PeHeuristicResult {
   bool is_pe = false;
   bool suspicious = false;
+  bool deterministic = false;
   double entropy = 0.0;
   std::string reason;
 };
@@ -549,6 +550,7 @@ PeHeuristicResult AnalyzeFileHeuristics(const std::wstring& path) {
       if (ContainsBinderOrPayloadBytes(overlay, 0)) {
         CloseHandle(file);
         res.suspicious = true;
+        res.deterministic = true;
         res.reason =
             "فایل بایندر با پی لود اجرایی یا آرشیو پنهان شده در بخش انتهایی (Overlay) شناسایی شد";
         return res;
@@ -571,42 +573,59 @@ PeHeuristicResult AnalyzeFileHeuristics(const std::wstring& path) {
     }
   }
 
+  // Extract UTF-16LE strings (.NET RATs like XWorm, AsyncRAT, AgentTesla store C2/API strings as UTF-16LE).
+  std::string utf16_view;
+  utf16_view.reserve(read_bytes / 4);
+  for (DWORD i = 0; i + 1 < read_bytes; i += 2) {
+    unsigned char ch = buf[i];
+    unsigned char hi = buf[i + 1];
+    if (hi == 0 && ch >= 32 && ch <= 126) {
+      utf16_view.push_back(static_cast<char>(std::tolower(ch)));
+    } else if (!utf16_view.empty() && utf16_view.back() != ' ') {
+      utf16_view.push_back(' ');
+    }
+  }
+  const std::string combined_view = ascii_view + " " + utf16_view;
+
   const bool injection_apis =
-      (ascii_view.find("virtualallocex") != std::string::npos &&
-       ascii_view.find("writeprocessmemory") != std::string::npos &&
-       (ascii_view.find("createremotethread") != std::string::npos ||
-        ascii_view.find("ntunmapviewofsection") != std::string::npos ||
-        ascii_view.find("zwunmapviewofsection") != std::string::npos ||
-        ascii_view.find("queueuserapc") != std::string::npos)) ||
-      ((ascii_view.find("ntunmapviewofsection") != std::string::npos ||
-        ascii_view.find("zwunmapviewofsection") != std::string::npos) &&
-       (ascii_view.find("setthreadcontext") != std::string::npos ||
-        ascii_view.find("wow64setthreadcontext") != std::string::npos) &&
-       ascii_view.find("resumethread") != std::string::npos);
+      (combined_view.find("virtualallocex") != std::string::npos &&
+       combined_view.find("writeprocessmemory") != std::string::npos &&
+       (combined_view.find("createremotethread") != std::string::npos ||
+        combined_view.find("ntunmapviewofsection") != std::string::npos ||
+        combined_view.find("zwunmapviewofsection") != std::string::npos ||
+        combined_view.find("queueuserapc") != std::string::npos)) ||
+      ((combined_view.find("ntunmapviewofsection") != std::string::npos ||
+        combined_view.find("zwunmapviewofsection") != std::string::npos) &&
+       (combined_view.find("setthreadcontext") != std::string::npos ||
+        combined_view.find("wow64setthreadcontext") != std::string::npos) &&
+       combined_view.find("resumethread") != std::string::npos);
 
   const bool amsi_etw_bypass =
-      ascii_view.find("amsiscanbuffer") != std::string::npos &&
-      ascii_view.find("virtualprotect") != std::string::npos &&
-      (ascii_view.find("etweventwrite") != std::string::npos || ent >= 6.8);
+      combined_view.find("amsiscanbuffer") != std::string::npos &&
+      combined_view.find("virtualprotect") != std::string::npos &&
+      (combined_view.find("etweventwrite") != std::string::npos || ent >= 6.8);
 
   const bool keylogger_apis =
-      ascii_view.find("setwindowshookexa") != std::string::npos ||
-      ascii_view.find("setwindowshookexw") != std::string::npos;
+      combined_view.find("setwindowshookexa") != std::string::npos ||
+      combined_view.find("setwindowshookexw") != std::string::npos;
 
   const bool rat_family_marker =
-      ascii_view.find("xworm") != std::string::npos ||
-      ascii_view.find("asyncrat") != std::string::npos ||
-      ascii_view.find("remcos") != std::string::npos ||
-      ascii_view.find("njrat") != std::string::npos ||
-      ascii_view.find("lummastealer") != std::string::npos ||
-      ascii_view.find("agenttesla") != std::string::npos ||
-      ascii_view.find("nanocore") != std::string::npos ||
-      ascii_view.find("darkcomet") != std::string::npos ||
-      ascii_view.find("castleloader") != std::string::npos ||
-      ascii_view.find("latrodectus") != std::string::npos ||
-      ascii_view.find("deerstealer") != std::string::npos ||
-      ascii_view.find("cobaltstrike") != std::string::npos ||
-      ascii_view.find("meterpreter") != std::string::npos;
+      combined_view.find("xworm") != std::string::npos ||
+      combined_view.find("asyncrat") != std::string::npos ||
+      combined_view.find("asyncclient") != std::string::npos ||
+      combined_view.find("remcos") != std::string::npos ||
+      combined_view.find("njrat") != std::string::npos ||
+      combined_view.find("lummastealer") != std::string::npos ||
+      combined_view.find("agenttesla") != std::string::npos ||
+      combined_view.find("nanocore") != std::string::npos ||
+      combined_view.find("darkcomet") != std::string::npos ||
+      combined_view.find("castleloader") != std::string::npos ||
+      combined_view.find("latrodectus") != std::string::npos ||
+      combined_view.find("deerstealer") != std::string::npos ||
+      combined_view.find("redlinestealer") != std::string::npos ||
+      combined_view.find("vidarstealer") != std::string::npos ||
+      combined_view.find("cobaltstrike") != std::string::npos ||
+      combined_view.find("meterpreter") != std::string::npos;
 
   const bool double_ext =
       ContainsCi(ToUtf8(path), ".pdf.exe") ||
@@ -618,27 +637,32 @@ PeHeuristicResult AnalyzeFileHeuristics(const std::wstring& path) {
 
   if (double_ext) {
     res.suspicious = true;
-    res.reason = "فایل با پسوند دوگانه فریبنده شناسایی شد";
+    res.deterministic = true;
+    res.reason = "فایل تروجانی با پسوند دوگانه فریبنده شناسایی شد";
     return res;
   }
   if (rat_family_marker) {
     res.suspicious = true;
+    res.deterministic = true;
     res.reason = "امضای بدافزار سرقت اطلاعات یا کنترل از راه دور (RAT) در فایل شناسایی شد";
     return res;
   }
   if (amsi_etw_bypass) {
     res.suspicious = true;
+    res.deterministic = true;
     res.reason = "الگوی دور زدن موتور امنیتی AMSI / ETW در فایل بدون امضا شناسایی شد";
     return res;
   }
   if (injection_apis && (ent >= 6.6 || high_entropy_code_section)) {
     res.suspicious = true;
-    res.reason = "الگوی تزریق کد یا Process Hollowing به همراه فشرده سازی مشکوک (Entropy بالا)";
+    res.deterministic = true;
+    res.reason = "الگوی تزریق کد یا Process Hollowing به همراه باینری فشرده شده شناسایی شد";
     return res;
   }
   if (keylogger_apis && (ent >= 6.9 || high_entropy_code_section)) {
     res.suspicious = true;
-    res.reason = "الگوی شنود ورودی کاربر (کی لاگر) و باینری رمزگذاری شده";
+    res.deterministic = true;
+    res.reason = "الگوی شنود کلیدها (کی لاگر) درون باینری رمزگذاری شده شناسایی شد";
     return res;
   }
   return res;
@@ -1769,8 +1793,76 @@ bool InspectImagePolyglotW(const std::wstring& path,
     }
   }
 
+  // 5. WebP RIFF Container Size Mismatch (Appended Binder)
+  if (EndsWithCi(lower_fn, ".webp") && hread >= 12 &&
+      hdr[0] == 'R' && hdr[1] == 'I' && hdr[2] == 'F' && hdr[3] == 'F' &&
+      hdr[8] == 'W' && hdr[9] == 'E' && hdr[10] == 'B' && hdr[11] == 'P') {
+    const uint64_t riff_payload_size =
+        static_cast<uint64_t>(hdr[4]) |
+        (static_cast<uint64_t>(hdr[5]) << 8) |
+        (static_cast<uint64_t>(hdr[6]) << 16) |
+        (static_cast<uint64_t>(hdr[7]) << 24);
+    const uint64_t declared = 8ULL + riff_payload_size;
+    if (riff_payload_size >= 12ULL && fsize > declared + 64ULL) {
+      const size_t cap = static_cast<size_t>(
+          std::min<uint64_t>(fsize - declared, 2ULL * 1024ULL * 1024ULL));
+      std::vector<BYTE> extra(cap);
+      LARGE_INTEGER li = {};
+      li.QuadPart = static_cast<LONGLONG>(declared);
+      DWORD tread = 0;
+      if (SetFilePointerEx(file, li, nullptr, FILE_BEGIN) != 0 &&
+          ReadFile(file, extra.data(), static_cast<DWORD>(cap), &tread, nullptr) != 0 &&
+          tread >= 64) {
+        extra.resize(tread);
+        if (ContainsBinderOrPayloadBytes(extra, 0) ||
+            ComputeShannonEntropy(extra.data(), extra.size()) >= 7.35) {
+          CloseHandle(file);
+          *key_tag_out = "dl:webp_eof:";
+          *reason_out = "داده یا فایل اجرایی بایندشده در انتهای تصویر WebP شناسایی شد.";
+          return true;
+        }
+      }
+    }
+  }
+
   CloseHandle(file);
   return false;
+}
+
+std::string NormalizeObfuscatedScript(const std::vector<BYTE>& bytes) {
+  std::string stage1;
+  stage1.reserve(bytes.size());
+  for (unsigned char c : bytes) {
+    if (c == 0 || c == '`' || c == '^') continue;
+    if (c >= 32 && c <= 126) {
+      stage1.push_back(static_cast<char>(std::tolower(c)));
+    } else if (c == '\n' || c == '\r' || c == '\t') {
+      stage1.push_back(' ');
+    }
+  }
+  std::string out;
+  out.reserve(stage1.size());
+  for (size_t i = 0; i < stage1.size(); ++i) {
+    char c = stage1[i];
+    if (c == '\'' || c == '"') {
+      if (i + 1 < stage1.size() && stage1[i + 1] == c) {
+        i += 1;
+        continue;
+      }
+      size_t j = i + 1;
+      while (j < stage1.size() && stage1[j] == ' ') ++j;
+      if (j < stage1.size() && (stage1[j] == '+' || stage1[j] == '&')) {
+        size_t k = j + 1;
+        while (k < stage1.size() && stage1[k] == ' ') ++k;
+        if (k < stage1.size() && (stage1[k] == '\'' || stage1[k] == '"')) {
+          i = k;
+          continue;
+        }
+      }
+    }
+    out.push_back(c);
+  }
+  return out;
 }
 
 bool InspectPdfPayload(const std::vector<BYTE>& doc_bytes,
@@ -1936,11 +2028,18 @@ std::vector<ScanDirSpec> CandidateScanDirectories(bool quick) {
     PWSTR roaming = nullptr;
     if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_RoamingAppData, 0, nullptr, &roaming)) &&
         roaming != nullptr) {
+      dirs.push_back(ScanDirSpec{std::wstring(roaming), 1, 200});
       std::wstring tg_roaming = std::wstring(roaming) + L"\\Telegram Desktop";
       if (DirectoryExistsW(tg_roaming)) {
         dirs.push_back(ScanDirSpec{tg_roaming, 3, 800});
       }
       CoTaskMemFree(roaming);
+    }
+    PWSTR progdata = nullptr;
+    if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_ProgramData, 0, nullptr, &progdata)) &&
+        progdata != nullptr) {
+      dirs.push_back(ScanDirSpec{std::wstring(progdata), 1, 150});
+      CoTaskMemFree(progdata);
     }
   }
   PWSTR startup = nullptr;
@@ -2314,6 +2413,68 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
         item.active = true;
         item.signed_valid = false;
         add_finding(std::move(item));
+        continue;
+      }
+    }
+
+    // Live binary + AMSI inspection for active non-system unsigned processes outside Program Files
+    if (!proc.path.empty() && !win_dir.empty()) {
+      const std::string p_lower = ToLowerAscii(proc.path);
+      const bool in_windows = p_lower.rfind(win_dir, 0) == 0;
+      const bool in_program_files =
+          p_lower.find(":\\program files\\") != std::string::npos ||
+          p_lower.find(":\\program files (x86)\\") != std::string::npos;
+      if (!in_windows && !in_program_files) {
+        std::wstring wpath = ToWide(proc.path);
+        uint64_t psize = 0;
+        uint64_t pmtime = 0;
+        if (GetFileStampW(wpath, &psize, &pmtime) &&
+            !IsCleanFileCached(p_lower, psize, pmtime)) {
+          int proc_amsi = 0;
+          if (amsi.ScanFile(wpath, &proc_amsi)) {
+            const std::string sha = ComputeFileSha256(wpath);
+            SecurityThreatEntry item;
+            item.key = !sha.empty() ? ("proc:amsi:" + sha.substr(0, 16))
+                                    : ("proc:amsi:" + proc.lower_name);
+            item.name = "بدافزار در حال اجرا (" + proc.name + ")";
+            item.category = "malware";
+            item.severity = "critical";
+            item.target = proc.path;
+            item.detail =
+                "موتور امنیتی ویندوز (AMSI) فایل اجرایی این پردازش فعال را به عنوان بدافزار شناسایی کرد.";
+            item.remediation_kind = "composite";
+            item.path = proc.path;
+            item.process_name = proc.name;
+            item.sha256 = sha;
+            item.active = true;
+            item.signed_valid = false;
+            add_finding(std::move(item));
+            continue;
+          }
+          const PeHeuristicResult pe = AnalyzeFileHeuristics(wpath);
+          if (pe.suspicious && !VerifyAuthenticodeSignature(wpath)) {
+            const std::string sha = ComputeFileSha256(wpath);
+            SecurityThreatEntry item;
+            item.key = !sha.empty() ? ("proc:heur:" + sha.substr(0, 16))
+                                    : ("proc:heur:" + proc.lower_name);
+            item.name = pe.deterministic
+                            ? ("بدافزار / تروجان فعال در حافظه (" + proc.name + ")")
+                            : ("فرایند پرخطر در حال اجرا (" + proc.name + ")");
+            item.category = "malware";
+            item.severity = pe.deterministic ? "critical" : "high";
+            item.target = proc.path;
+            item.detail = pe.reason;
+            item.remediation_kind = "composite";
+            item.path = proc.path;
+            item.process_name = proc.name;
+            item.sha256 = sha;
+            item.active = true;
+            item.signed_valid = false;
+            add_finding(std::move(item));
+            continue;
+          }
+          RecordCleanFileCache(p_lower, psize, pmtime);
+        }
       }
     }
   }
@@ -3124,22 +3285,25 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
             !EndsWithCi(lower_fn, ".scr")) {
           std::vector<BYTE> script_bytes;
           if (ReadFileSampleBytes(wfull, 1024 * 1024, &script_bytes)) {
+            const std::string norm_script =
+                NormalizeObfuscatedScript(script_bytes);
             const bool obfuscated_dropper =
-                (ContainsAsciiBytesCi(script_bytes, "frombase64string") &&
-                 (ContainsAsciiBytesCi(script_bytes, "invoke-expression") ||
-                  ContainsAsciiBytesCi(script_bytes, "iex(") ||
-                  ContainsAsciiBytesCi(script_bytes, "-bxor") ||
-                  ContainsAsciiBytesCi(script_bytes, "gzipstream"))) ||
-                (ContainsAsciiBytesCi(script_bytes, "wscript.shell") &&
-                 (ContainsAsciiBytesCi(script_bytes, "http://") ||
-                  ContainsAsciiBytesCi(script_bytes, "https://") ||
-                  ContainsAsciiBytesCi(script_bytes, "powershell") ||
-                  ContainsAsciiBytesCi(script_bytes, "urldownloadtofile"))) ||
-                ContainsAsciiBytesCi(script_bytes, "urldownloadtofile") ||
-                ContainsAsciiBytesCi(script_bytes, "eval(atob(") ||
-                ContainsAsciiBytesCi(script_bytes, "basestart-") ||
-                ContainsAsciiBytesCi(script_bytes, "tvqqaam") ||
-                ContainsAsciiBytesCi(script_bytes, "eicar-standard-antivirus-test-file");
+                (norm_script.find("frombase64string") != std::string::npos &&
+                 (norm_script.find("invoke-expression") != std::string::npos ||
+                  norm_script.find("iex(") != std::string::npos ||
+                  norm_script.find("-bxor") != std::string::npos ||
+                  norm_script.find("gzipstream") != std::string::npos)) ||
+                (norm_script.find("wscript.shell") != std::string::npos &&
+                 (norm_script.find("http://") != std::string::npos ||
+                  norm_script.find("https://") != std::string::npos ||
+                  norm_script.find("powershell") != std::string::npos ||
+                  norm_script.find("urldownloadtofile") != std::string::npos)) ||
+                norm_script.find("urldownloadtofile") != std::string::npos ||
+                norm_script.find("eval(atob(") != std::string::npos ||
+                norm_script.find("basestart-") != std::string::npos ||
+                norm_script.find("tvqqaam") != std::string::npos ||
+                norm_script.find("eicar-standard-antivirus-test-file") !=
+                    std::string::npos;
             if (obfuscated_dropper) {
               const std::string sha = ComputeFileSha256(wfull);
               SecurityThreatEntry item;
@@ -3179,9 +3343,11 @@ SecurityScanReport SecurityScanner::ScanDeviceSecurity(bool quick) {
               SecurityThreatEntry item;
               item.key = !sha.empty() ? ("heur:" + sha.substr(0, 16))
                                       : ("heur:" + lower_fn);
-              item.name = "فایل مشکوک و پرخطر (" + fname + ")";
+              item.name = pe.deterministic
+                              ? ("بدافزار / تروجان شناسایی شده (" + fname + ")")
+                              : ("فایل پرخطر غیرمعتبر (" + fname + ")");
               item.category = "malicious_download";
-              item.severity = "high";
+              item.severity = pe.deterministic ? "critical" : "high";
               item.target = full;
               item.detail = pe.reason;
               item.remediation_kind = "file";

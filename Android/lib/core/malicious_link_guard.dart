@@ -1192,16 +1192,35 @@ class MaliciousLinkGuard {
 
     final bool isRawIp = !loopback &&
         RegExp(r'^\d{1,3}(\.\d{1,3}){3}$').hasMatch(host);
+    final bool isPrivateIp = isRawIp && _isPrivateIpV4(host);
+    final bool isPublicRawIp = isRawIp && !isPrivateIp;
     final String tld = host.contains('.') ? host.split('.').last : '';
     final bool exeDownload = _dangerExeExts.any(pathLower.endsWith);
-    if (exeDownload && (isRawIp || _highRiskTlds.contains(tld))) {
+    const List<String> strictDropperExts = <String>[
+      '.scr', '.pif', '.hta', '.vbs', '.vbe', '.jse', '.wsf', '.wsh', '.ps1',
+      '.bat', '.cmd',
+    ];
+    final bool strictDropper = strictDropperExts.any(pathLower.endsWith);
+    if (!trusted && !loopback && strictDropper) {
+      return MaliciousLinkMatch(
+        key: 'link:script_dropper:$host',
+        host: host,
+        target: raw.length > 180 ? raw.substring(0, 180) : raw,
+        title: 'لینک مستقیم فایل اسکریپتی/اجرایی خطرناک ($host)',
+        detail:
+            'لینک بیرونی مستقیماً به فایل اسکریپتی یا تروجانی (.scr/.hta/.vbs/.ps1/.bat) اشاره دارد و برای امنیت مسدود شد.',
+        severity: 'critical',
+        riskScore: 95,
+      );
+    }
+    if (exeDownload && (isPublicRawIp || _highRiskTlds.contains(tld))) {
       return MaliciousLinkMatch(
         key: 'link:payload:$host',
         host: host,
         target: raw.length > 180 ? raw.substring(0, 180) : raw,
         title: 'لینک دانلود پرخطر فایل اجرایی/نصبی ($host)',
         detail:
-            'دانلود مستقیم فایل نصبی یا اجرایی از آی پی مستقیم یا دامنه مشکوک مسدود شد.',
+            'دانلود مستقیم فایل نصبی یا اجرایی از آی پی عمومی مستقیم یا دامنه پرریسک مسدود شد.',
         severity: 'high',
         riskScore: 90,
       );
@@ -1225,7 +1244,7 @@ class MaliciousLinkGuard {
         !trusted &&
         uri.hasPort &&
         _suspiciousC2Ports.contains(uri.port) &&
-        (isRawIp || _highRiskTlds.contains(tld) || exeDownload)) {
+        (isPublicRawIp || _highRiskTlds.contains(tld) || exeDownload)) {
       return MaliciousLinkMatch(
         key: 'link:c2_port:$host:${uri.port}',
         host: host,
@@ -1251,25 +1270,25 @@ class MaliciousLinkGuard {
       }
     }
 
-    // 8. امتیازدهی ترکیبی ریسک فیشینگ ۲۰۲۶ برای پیوندهای غیرتاییدشده
-    if (!loopback && !trusted) {
+    // 8. بررسی ترکیب چند شاخص قطعی فیشینگ ۲۰۲۶ (آی پی عمومی مستقیم + ورود/پرداخت، یا الگوی DGA + TLD پرریسک؛ آی پی روتر محلی مستثنی است)
+    if (!loopback && !trusted && !isPrivateIp) {
       final int score = _computeUrlRiskScore(
         uri: uri,
         host: host,
         tld: tld,
-        isRawIp: isRawIp,
+        isRawIp: isPublicRawIp,
         pathLower: pathLower,
         exeDownload: exeDownload,
         rawLength: raw.length,
       );
-      if (score >= 65) {
+      if (score >= 70) {
         return MaliciousLinkMatch(
-          key: 'link:heuristic:$host:${score}',
+          key: 'link:heuristic:$host:$score',
           host: host,
           target: raw.length > 180 ? raw.substring(0, 180) : raw,
-          title: 'پیوند پرخطر فیشینگ / مشکوک ($host)',
+          title: 'پیوند فیشینگ با ساختار پرخطر ($host)',
           detail:
-              'این پیوند چندین شاخص ترکیبی فیشینگ و پنهان کاری نشانی (امتیاز خطر $score از ۱۰۰) را فعال کرد و باز نشد.',
+              'این نشانی هم زمان چندین الگوی خطرناک فیشینگ/تخلف (شاخص تطبیق $score از ۱۰۰) را در آدرس و دامنه دارد و مسدود شد.',
           severity: score >= 85 ? 'critical' : 'high',
           riskScore: score,
         );
@@ -1277,6 +1296,23 @@ class MaliciousLinkGuard {
     }
 
     return null;
+  }
+
+  static bool _isPrivateIpV4(String host) {
+    final List<String> segs = host.split('.');
+    if (segs.length != 4) {
+      return false;
+    }
+    final int? a = int.tryParse(segs[0]);
+    final int? b = int.tryParse(segs[1]);
+    if (a == null || b == null) {
+      return false;
+    }
+    return a == 10 ||
+        a == 127 ||
+        (a == 192 && b == 168) ||
+        (a == 172 && b >= 16 && b <= 31) ||
+        (a == 169 && b == 254);
   }
 
   static MaliciousLinkMatch? _inspectQueryAndFragment(

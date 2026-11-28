@@ -740,6 +740,14 @@ void main() {
         ),
         isNull,
       );
+      expect(
+        MaliciousLinkGuard.inspectUrl('http://192.168.1.1/login'),
+        isNull,
+      );
+      expect(
+        MaliciousLinkGuard.inspectUrl('https://cdn.unknown-site.com/invoice.hta'),
+        isNotNull,
+      );
 
       // فناوری های تشخیص لینک ۲۰۲۶:
       // ۱. دیکدر Punycode (RFC 3492) و هموگراف سیریلیک (pаypal.com = xn--pypal-4ve.com)
@@ -1990,6 +1998,11 @@ void main() {
         expect(cpp, contains('RunMRU'));
         expect(cpp, contains('xworm'));
         expect(cpp, contains('lummastealer'));
+        expect(cpp, contains('utf16_view'));
+        expect(cpp, contains('NormalizeObfuscatedScript'));
+        expect(cpp, contains('dl:webp_eof:'));
+        expect(cpp, contains('bool deterministic = false;'));
+        expect(cpp, contains('FOLDERID_RoamingAppData'));
         expect(cpp, isNot(contains('lower.find("umbrella") != std::string::npos')));
       },
     );

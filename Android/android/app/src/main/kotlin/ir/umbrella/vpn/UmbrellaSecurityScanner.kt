@@ -91,7 +91,15 @@ object UmbrellaSecurityScanner {
             combined.contains("androrat") ||
             combined.contains("eaglespy") ||
             combined.contains("ermac") ||
-            combined.contains("hookbot")
+            combined.contains("hookbot") ||
+            combined.contains("brata") ||
+            combined.contains("octo") ||
+            combined.contains("godfather") ||
+            combined.contains("flubot") ||
+            combined.contains("teabot") ||
+            combined.contains("sharkbot") ||
+            combined.contains("vultur") ||
+            combined.contains("cerberus")
         ) {
             return SignatureMatch(
                 key = "malware:android_rat",
@@ -685,6 +693,37 @@ object UmbrellaSecurityScanner {
                                         detail = "داده یا بدافزار بایندشده پس از پایان تصویر GIF شناسایی شد.",
                                     )
                                 }
+                            }
+                        }
+                    }
+                }
+                // 4. WebP RIFF Container Size Mismatch (Appended Binder)
+                if (lower.endsWith(".webp") && hRead >= 12 &&
+                    hdr[0] == 'R'.code.toByte() && hdr[1] == 'I'.code.toByte() &&
+                    hdr[2] == 'F'.code.toByte() && hdr[3] == 'F'.code.toByte() &&
+                    hdr[8] == 'W'.code.toByte() && hdr[9] == 'E'.code.toByte() &&
+                    hdr[10] == 'B'.code.toByte() && hdr[11] == 'P'.code.toByte()
+                ) {
+                    val riffPayloadSize = (hdr[4].toLong() and 0xFFL) or
+                        ((hdr[5].toLong() and 0xFFL) shl 8) or
+                        ((hdr[6].toLong() and 0xFFL) shl 16) or
+                        ((hdr[7].toLong() and 0xFFL) shl 24)
+                    val declared = 8L + riffPayloadSize
+                    if (riffPayloadSize >= 12L && totalLen > declared + 64L) {
+                        val cap = minOf(totalLen - declared, 2L * 1024L * 1024L).toInt()
+                        val extra = ByteArray(cap)
+                        raf.seek(declared)
+                        val tRead = raf.read(extra)
+                        if (tRead >= 64) {
+                            val slice = if (tRead == cap) extra else extra.copyOf(tRead)
+                            if (containsBinderOrPayloadBytes(slice, 0) || shannonEntropy(slice) >= 7.35) {
+                                return@use SignatureMatch(
+                                    key = "dl:webp_eof:${lower.hashCode()}",
+                                    name = "تصویر WebP با فایل بایندشده ($fname)",
+                                    category = "malicious_download",
+                                    severity = "critical",
+                                    detail = "داده یا بدافزار بایندشده در انتهای تصویر WebP شناسایی شد.",
+                                )
                             }
                         }
                     }
@@ -1394,7 +1433,7 @@ object UmbrellaSecurityScanner {
             return inspectDownloadedApk(context, file, selfPkg)
         }
         if (lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg") ||
-            lower.endsWith(".bmp") || lower.endsWith(".gif")
+            lower.endsWith(".bmp") || lower.endsWith(".gif") || lower.endsWith(".webp")
         ) {
             inspectImagePolyglotFile(file, fname, lower)?.let { return it }
         }

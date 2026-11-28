@@ -91,22 +91,36 @@ class SafeUrlLauncher {
     final HttpClient client = HttpClient()
       ..connectionTimeout = const Duration(milliseconds: 1400);
     try {
-      final HttpClientRequest req = await client
-          .openUrl('HEAD', uri)
-          .timeout(const Duration(milliseconds: 1600));
-      req.followRedirects = false;
-      req.headers.set(HttpHeaders.userAgentHeader, 'Mozilla/5.0 UmbrellaLinkGuard');
-      final HttpClientResponse res =
-          await req.close().timeout(const Duration(milliseconds: 1600));
-      await res.drain<void>().catchError((_) {});
+      for (final String method in const <String>['HEAD', 'GET']) {
+        final HttpClientRequest req = await client
+            .openUrl(method, uri)
+            .timeout(const Duration(milliseconds: 1600));
+        req.followRedirects = false;
+        req.headers.set(
+          HttpHeaders.userAgentHeader,
+          'Mozilla/5.0 UmbrellaLinkGuard',
+        );
+        if (method == 'GET') {
+          req.headers.set(HttpHeaders.rangeHeader, 'bytes=0-0');
+        }
+        final HttpClientResponse res =
+            await req.close().timeout(const Duration(milliseconds: 1600));
+        await res.drain<void>().catchError((_) {});
 
-      if (res.statusCode >= 300 && res.statusCode < 400) {
-        final String? loc = res.headers.value(HttpHeaders.locationHeader);
-        if (loc != null && loc.trim().isNotEmpty) {
-          final Uri? resolved = Uri.tryParse(loc.trim());
-          if (resolved != null) {
-            return resolved.hasScheme ? resolved : uri.resolveUri(resolved);
+        if (res.statusCode >= 300 && res.statusCode < 400) {
+          final String? loc = res.headers.value(HttpHeaders.locationHeader);
+          if (loc != null && loc.trim().isNotEmpty) {
+            final Uri? resolved = Uri.tryParse(loc.trim());
+            if (resolved != null) {
+              return resolved.hasScheme ? resolved : uri.resolveUri(resolved);
+            }
           }
+        }
+        if (method == 'HEAD' &&
+            res.statusCode != HttpStatus.methodNotAllowed &&
+            res.statusCode != HttpStatus.notImplemented &&
+            res.statusCode != HttpStatus.forbidden) {
+          break;
         }
       }
       return null;

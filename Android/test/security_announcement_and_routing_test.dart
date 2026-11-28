@@ -812,6 +812,14 @@ void main() {
         ),
         isNull,
       );
+      expect(
+        MaliciousLinkGuard.inspectUrl('http://192.168.1.1/login'),
+        isNull,
+      );
+      expect(
+        MaliciousLinkGuard.inspectUrl('https://cdn.unknown-site.com/invoice.hta'),
+        isNotNull,
+      );
 
       // فناوری های تشخیص لینک ۲۰۲۶:
       // ۱. دیکدر Punycode (RFC 3492) و هموگراف سیریلیک (مثلاً pаypal.com = xn--pypal-4ve.com)
@@ -1900,6 +1908,9 @@ void main() {
         expect(scannerKt, contains('hasHiddenPayloadEntriesInApk'));
         expect(scannerKt, contains('craxsrat'));
         expect(scannerKt, contains('spynote'));
+        expect(scannerKt, contains('dl:webp_eof:'));
+        expect(scannerKt, contains('combined.contains("brata")'));
+        expect(scannerKt, contains('combined.contains("godfather")'));
 
         final String handlerKt = File(
           'android/app/src/main/kotlin/ir/umbrella/vpn/MethodHandler.kt',
