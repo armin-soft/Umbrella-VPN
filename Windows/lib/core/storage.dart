@@ -152,6 +152,52 @@ class LocalStore {
       // پاک کردن فایل اختیاری است؛ نبود یا قفل بودن آن برنامه را متوقف نمی کند.
     }
   }
+
+  File fileSync(String name) {
+    final Directory dir =
+        Directory('${directory.path}${Platform.pathSeparator}umbrella');
+    if (!dir.existsSync()) {
+      dir.createSync(recursive: true);
+    }
+    return File('${dir.path}${Platform.pathSeparator}$name');
+  }
+
+  String? readFileSync(String name) {
+    try {
+      final File target = fileSync(name);
+      if (!target.existsSync()) {
+        return null;
+      }
+      return target.readAsStringSync();
+    } on FileSystemException {
+      return null;
+    }
+  }
+
+  void writeFileSync(String name, String content) {
+    File? tmp;
+    try {
+      final File target = fileSync(name);
+      tmp = File('${target.path}.tmp');
+      tmp.writeAsStringSync(content, flush: true);
+      try {
+        tmp.renameSync(target.path);
+      } on FileSystemException {
+        target.writeAsStringSync(content, flush: true);
+        if (tmp.existsSync()) {
+          tmp.deleteSync();
+        }
+      }
+    } on FileSystemException {
+      try {
+        if (tmp != null && tmp.existsSync()) {
+          tmp.deleteSync();
+        }
+      } on FileSystemException {
+        // نادیده گرفته می شود.
+      }
+    }
+  }
 }
 
 /// کلیدهای ذخیره سازی در یک جا، تا غلط تایپی کلیدها پیش نیاید.

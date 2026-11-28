@@ -41,8 +41,10 @@ final class Helper {
 }
 final class Environment {
     public static function getUmbrellaBaseUrl(): string { return 'https://panel.example.test/api/v2/admin/user'; }
+    public static function getUmbrellaApiKey(): string { return 'test-admin-uuid'; }
 }
 final class ServerClient {
+    public static function headers(): array { return ['Accept: application/json']; }
     public static function postHeaders(): array { return ['Content-Type: application/json']; }
     public static function listUsers(): array { return ['StatusCode' => 200, 'Json' => []]; }
 }

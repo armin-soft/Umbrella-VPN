@@ -429,7 +429,7 @@ class AuthController extends ChangeNotifier {
     _deviceId = (_store.read(StoreKeys.deviceId) ?? '').trim();
     if (_deviceId.isEmpty) {
       try {
-        final String backedUp = (await _store.readFile('device_id.txt') ?? '').trim();
+        final String backedUp = (_store.readFileSync('device_id.txt') ?? '').trim();
         if (RegExp(r'^[A-Za-z0-9_-]{16,64}$').hasMatch(backedUp)) {
           _deviceId = backedUp;
           await _store.write(StoreKeys.deviceId, _deviceId);
@@ -441,9 +441,9 @@ class AuthController extends ChangeNotifier {
       await _store.write(StoreKeys.deviceId, _deviceId);
     }
     try {
-      final String? existingBackup = await _store.readFile('device_id.txt');
+      final String? existingBackup = _store.readFileSync('device_id.txt');
       if (existingBackup == null || existingBackup.trim() != _deviceId) {
-        await _store.writeFile('device_id.txt', _deviceId);
+        _store.writeFileSync('device_id.txt', _deviceId);
       }
     } catch (_) {}
     // اعلان های ذخیره شده پیش از شروع پایش دوره ای بارگذاری می شوند تا هیچ

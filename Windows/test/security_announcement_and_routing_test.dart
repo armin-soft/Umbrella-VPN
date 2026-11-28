@@ -2709,20 +2709,19 @@ void main() {
     test('پشتیبان گیری و بازیابی شناسه دستگاه و ارسال نام و پلتفرم یکسان بدون نیم فاصله', () async {
       final String authSrc = File('lib/state/auth_controller.dart').readAsStringSync();
       expect(authSrc.contains('\u200C'), isFalse);
-      expect(authSrc.contains("readFile('device_id.txt')"), isTrue);
-      expect(authSrc.contains("writeFile('device_id.txt', _deviceId)"), isTrue);
+      expect(authSrc.contains("readFileSync('device_id.txt')"), isTrue);
+      expect(authSrc.contains("writeFileSync('device_id.txt', _deviceId)"), isTrue);
       expect(authSrc.contains('platform: _device.platformLabel'), isFalse);
       expect(authSrc.contains('deviceName: _device.deviceName'), isTrue);
 
-      SharedPreferences.setMockInitialValues(<String, Object>{});
       await LocalStore.instance.init();
       const String savedId = '11223344556677889900aabbccddeeff';
-      await LocalStore.instance.writeFile('device_id.txt', savedId);
+      LocalStore.instance.writeFileSync('device_id.txt', savedId);
       await LocalStore.instance.remove(StoreKeys.deviceId);
       addTearDown(() async {
-        final File f = await LocalStore.instance.file('device_id.txt');
-        if (await f.exists()) {
-          await f.delete();
+        final File f = LocalStore.instance.fileSync('device_id.txt');
+        if (f.existsSync()) {
+          f.deleteSync();
         }
         await LocalStore.instance.remove(StoreKeys.deviceId);
       });
