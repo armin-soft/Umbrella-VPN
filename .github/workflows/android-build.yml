@@ -64,11 +64,13 @@ jobs:
       - name: Run Android unit and widget tests
         run: |
           set -o pipefail
-          out=$(flutter test --reporter expanded 2>&1) || {
-            echo "$out"
-            python3 - <<'PY' "$out"
+          log="$RUNNER_TEMP/flutter-test.log"
+          if ! flutter test --reporter expanded 2>&1 | tee "$log"; then
+            python3 - <<'PY' "$log"
           import sys
-          rows = sys.argv[1].splitlines()
+          with open(sys.argv[1], 'r', encoding='utf-8', errors='replace') as fh:
+              raw = fh.read()
+          rows = raw.splitlines()
           picked = []
           i = 0
           while i < len(rows):
@@ -78,14 +80,13 @@ jobs:
                   i += 18
               else:
                   i += 1
-          snippet = '\n'.join(picked) if picked else sys.argv[1][-7000:]
+          snippet = '\n'.join(picked) if picked else raw[-7000:]
           for pos in range(0, min(len(snippet), 14000), 3500):
               chunk = snippet[pos:pos+3500].replace('%', '%25').replace('\r', '').replace('\n', '%0A')
               print(f'::error title=flutter-test::{chunk}')
           PY
             exit 1
-          }
-          echo "$out"
+          fi
 
   build-apk:
     needs: [analyze-and-test]

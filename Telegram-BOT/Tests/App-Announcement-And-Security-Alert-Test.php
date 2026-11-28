@@ -55,7 +55,9 @@ final class Helper {
 public static function stripZwnj(string $T): string { return str_replace("\u{200C}", '', $T); }
 public static function repairMojibake(string $T): string { return $T; }
 public static function digitsToPersian(string $T): string { return $T; }
-public static function toPersian(int|float|string $V): string { return (string)$V; }
+public static function toPersian(int|float|string $V): string {
+return strtr((string)$V, ['0'=>'۰','1'=>'۱','2'=>'۲','3'=>'۳','4'=>'۴','5'=>'۵','6'=>'۶','7'=>'۷','8'=>'۸','9'=>'۹']);
+}
 public static function toEnglish(string $T): string {
 return strtr($T, ['۰'=>'0','۱'=>'1','۲'=>'2','۳'=>'3','۴'=>'4','۵'=>'5','۶'=>'6','۷'=>'7','۸'=>'8','۹'=>'9','٠'=>'0','١'=>'1','٢'=>'2','٣'=>'3','٤'=>'4','٥'=>'5','٦'=>'6','٧'=>'7','٨'=>'8','٩'=>'9']);
 }

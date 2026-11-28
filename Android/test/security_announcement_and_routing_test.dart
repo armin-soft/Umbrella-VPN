@@ -2596,6 +2596,9 @@ void main() {
     });
 
     testWidgets('SecurityShieldDialog ارقام فارسی نمایش می دهد و متن وضعیت امن را تمیز رندر می کند', (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(420, 820));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
       final _FakeNative native = _FakeNative()
         ..scanResult = const SecurityScanResult(
           clean: false,
@@ -2615,7 +2618,10 @@ void main() {
             ),
           ],
         );
-      final SecurityScannerController sec = SecurityScannerController(native: native);
+      final SecurityScannerController sec = SecurityScannerController(
+        native: native,
+        autoDeleteMaliciousDownloads: false,
+      );
       final ToastController toasts = ToastController();
       await sec.scanNow();
 

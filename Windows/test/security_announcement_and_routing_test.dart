@@ -2603,6 +2603,9 @@ void main() {
     });
 
     testWidgets('SecurityShieldDialog در ویندوز ارقام فارسی و متن وضعیت امن تمیز رندر می کند', (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(640, 820));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
       final _FakeNative native = _FakeNative()
         ..scanResult = const SecurityScanResult(
           clean: false,
@@ -2623,7 +2626,10 @@ void main() {
             ),
           ],
         );
-      final SecurityScannerController sec = SecurityScannerController(native: native);
+      final SecurityScannerController sec = SecurityScannerController(
+        native: native,
+        autoDeleteMaliciousDownloads: false,
+      );
       final ToastController toasts = ToastController();
       await sec.scanNow();
 
